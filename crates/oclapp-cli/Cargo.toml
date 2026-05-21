@@ -18,4 +18,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-# TODO: Add clap when implementing CLI args
+clap = { version = "4", features = ["derive"] }
+ctrlc = "3"
+which = "6"
+dirs = "5"
