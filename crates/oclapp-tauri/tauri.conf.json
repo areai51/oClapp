@@ -1,0 +1,34 @@
+{
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "frontendDist": "../frontend/dist",
+    "devUrl": "http://localhost:5173"
+  },
+  "identifier": "com.oclapp.desktop",
+  "productName": "oClapp",
+  "version": "0.1.0",
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "height": 800,
+        "resizable": true,
+        "title": "oClapp",
+        "width": 1200
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "category": "DeveloperTool",
+    "copyright": "",
+    "icon": [
+      "icons/icon.png"
+    ],
+    "targets": "all"
+  }
+}

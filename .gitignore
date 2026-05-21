@@ -1,0 +1,14 @@
+/target
+Cargo.lock
+node_modules/
+dist/
+*.log
+.DS_Store
+.env
+.vscode/
+.idea/
+*.iml
+oclapp-tauri/gen
+oclapp-tauri/icons/*.png
+oclapp-tauri/icons/*.icns
+oclapp-tauri/icons/*.ico

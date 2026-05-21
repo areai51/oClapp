@@ -1,0 +1,21 @@
+[package]
+name = "oclapp-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "oclapp"
+path = "src/main.rs"
+
+[dependencies]
+oclapp-core = { path = "../oclapp-core" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# TODO: Add clap when implementing CLI args
