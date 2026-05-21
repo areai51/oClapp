@@ -18,7 +18,9 @@
         "height": 800,
         "resizable": true,
         "title": "oClapp",
-        "width": 1200
+        "width": 1200,
+        "minWidth": 800,
+        "minHeight": 600
       }
     ]
   },
@@ -29,6 +31,29 @@
     "icon": [
       "icons/icon.png"
     ],
-    "targets": "all"
+    "targets": [
+      "dmg",
+      "app",
+      "appimage",
+      "deb",
+      "rpm",
+      "msi",
+      "nsis"
+    ],
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
   }
 }
