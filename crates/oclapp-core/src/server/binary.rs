@@ -74,49 +74,49 @@ pub async fn ensure_binary(data_dir: &std::path::Path) -> Result<PathBuf> {
         .await
         .map_err(OclappError::Io)?;
 
-    // Extract zip
-    let archive = std::fs::File::open(&zip_path).map_err(OclappError::Io)?;
-    let mut zip = zip::ZipArchive::new(archive).map_err(|e| {
-        OclappError::Validation(format!("Failed to read zip archive: {}", e))
-    })?;
-
-    for i in 0..zip.len() {
-        let mut file = zip.by_index(i).map_err(|e| {
-            OclappError::Validation(format!("Failed to read zip entry: {}", e))
+    // Extract zip in a blocking task because zip::ZipFile contains non-Send dyn Read
+    let bin_dir_clone = bin_dir.clone();
+    let zip_path_clone = zip_path.clone();
+    let _binary_path_clone = binary_path.clone();
+    tokio::task::spawn_blocking(move || {
+        let archive = std::fs::File::open(&zip_path_clone).map_err(OclappError::Io)?;
+        let mut zip = zip::ZipArchive::new(archive).map_err(|e| {
+            OclappError::Validation(format!("Failed to read zip archive: {}", e))
         })?;
 
-        let outpath = bin_dir.join(file.name());
-        if file.name().ends_with('/') {
-            tokio::fs::create_dir_all(&outpath)
-                .await
-                .map_err(OclappError::Io)?;
-        } else {
-            let mut outfile = tokio::fs::File::create(&outpath)
-                .await
-                .map_err(OclappError::Io)?;
-            let mut buf = Vec::new();
-            std::io::Read::read_to_end(&mut file, &mut buf).map_err(|e| {
-                OclappError::Validation(format!("Failed to read zip data: {}", e))
+        for i in 0..zip.len() {
+            let mut file = zip.by_index(i).map_err(|e| {
+                OclappError::Validation(format!("Failed to read zip entry: {}", e))
             })?;
-            tokio::io::AsyncWriteExt::write_all(&mut outfile, &buf)
-                .await
-                .map_err(OclappError::Io)?;
 
-            // Make executable on Unix
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let mut perms = tokio::fs::metadata(&outpath)
-                    .await
-                    .map_err(OclappError::Io)?
-                    .permissions();
-                perms.set_mode(0o755);
-                tokio::fs::set_permissions(&outpath, perms)
-                    .await
-                    .map_err(OclappError::Io)?;
+            let outpath = bin_dir_clone.join(file.name());
+            if file.name().ends_with('/') {
+                std::fs::create_dir_all(&outpath).map_err(OclappError::Io)?;
+            } else {
+                let mut outfile = std::fs::File::create(&outpath).map_err(OclappError::Io)?;
+                let mut buf = Vec::new();
+                std::io::Read::read_to_end(&mut file, &mut buf).map_err(|e| {
+                    OclappError::Validation(format!("Failed to read zip data: {}", e))
+                })?;
+                std::io::Write::write_all(&mut outfile, &buf).map_err(OclappError::Io)?;
+
+                // Make executable on Unix
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mut perms = std::fs::metadata(&outpath)
+                        .map_err(OclappError::Io)?
+                        .permissions();
+                    perms.set_mode(0o755);
+                    std::fs::set_permissions(&outpath, perms).map_err(OclappError::Io)?;
+                }
             }
         }
-    }
+
+        Ok::<_, crate::error::OclappError>(())
+    })
+    .await
+    .map_err(|e| OclappError::Validation(format!("Zip extraction task failed: {}", e)))??;
 
     // Clean up zip
     let _ = tokio::fs::remove_file(&zip_path).await;

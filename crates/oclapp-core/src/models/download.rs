@@ -14,7 +14,7 @@ pub async fn download_from_hf(
     repo_id: &str,
     filename: &str,
     target_dir: &Path,
-    _progress_callback: Option<&dyn Fn(DownloadProgress)>,
+    _progress_callback: Option<&(dyn Fn(DownloadProgress) + Send + Sync)>,
 ) -> Result<std::path::PathBuf> {
     let api = Api::new().map_err(|e| {
         OclappError::Validation(format!("Failed to initialize HF API: {}", e))
@@ -41,7 +41,7 @@ pub async fn download_from_hf(
 pub async fn download_file_with_progress(
     url: &str,
     target_path: &Path,
-    progress_callback: Option<&dyn Fn(DownloadProgress)>,
+    progress_callback: Option<&(dyn Fn(DownloadProgress) + Send + Sync)>,
 ) -> Result<()> {
     let client = reqwest::Client::new();
 
