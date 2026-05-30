@@ -12,7 +12,7 @@ export interface LocalModel {
   id: string;
   path: string;
   size: number;
-  format: "Gguf" | "Mlx" | "Unknown";
+  format: "Gguf" | "Mlx" | "Safetensors" | "Unknown";
 }
 
 export interface ServerStatus {

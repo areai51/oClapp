@@ -1,14 +1,48 @@
+# Rust
 /target
-Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Node
 node_modules/
 dist/
 *.log
-.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment
 .env
-.vscode/
+.env.local
+.env.*.local
+
+# IDE
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.iml
-oclapp-tauri/gen
-oclapp-tauri/icons/*.png
-oclapp-tauri/icons/*.icns
-oclapp-tauri/icons/*.ico
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tauri generated schemas + manifests
+crates/oclapp-tauri/gen/
+
+# Tauri generated icon variants (source icon is tracked with git add -f)
+crates/oclapp-tauri/icons/*.png
+crates/oclapp-tauri/icons/*.icns
+crates/oclapp-tauri/icons/*.ico
+
+# Frontend build artifacts
+frontend/dist/
+frontend/.cache/
+*.tsbuildinfo
+
+# Misc
+*.tmp
+*.temp
+*.swp
+*~

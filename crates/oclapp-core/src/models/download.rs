@@ -1,6 +1,5 @@
 use crate::error::{OclappError, Result};
 use futures_util::StreamExt;
-use hf_hub::api::tokio::Api;
 use std::path::Path;
 use tokio::io::AsyncWriteExt;
 
@@ -14,26 +13,19 @@ pub async fn download_from_hf(
     repo_id: &str,
     filename: &str,
     target_dir: &Path,
-    _progress_callback: Option<&(dyn Fn(DownloadProgress) + Send + Sync)>,
+    progress_callback: Option<&(dyn Fn(DownloadProgress) + Send + Sync)>,
 ) -> Result<std::path::PathBuf> {
-    let api = Api::new().map_err(|e| {
-        OclappError::Validation(format!("Failed to initialize HF API: {}", e))
-    })?;
-
-    let repo = api.model(repo_id.to_string());
-
-    let file_path = repo.get(filename).await.map_err(|e| {
-        OclappError::Validation(format!(
-            "Failed to download {} from {}: {}",
-            filename, repo_id, e
-        ))
-    })?;
-
-    // Copy from hf-hub cache to target directory
+    let url = format!(
+        "https://huggingface.co/{}/resolve/main/{}",
+        repo_id, filename
+    );
     let target_path = target_dir.join(filename);
-    tokio::fs::copy(&file_path, &target_path)
-        .await
-        .map_err(OclappError::Io)?;
+
+    download_file_with_progress(&url,
+        &target_path,
+        progress_callback,
+    )
+    .await?;
 
     Ok(target_path)
 }

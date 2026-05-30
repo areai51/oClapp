@@ -1,4 +1,5 @@
 use crate::error::{OclappError, Result};
+use crate::server::binary::BinaryFlavor;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
@@ -57,7 +58,8 @@ impl ServerManager {
     pub async fn start(
         &mut self,
         binary_path: &std::path::Path,
-        args: &[ String],
+        flavor: BinaryFlavor,
+        args: &[String],
         model_name: &str,
         port: u16,
     ) -> Result<()> {
@@ -71,6 +73,9 @@ impl ServerManager {
         self.status.last_error = None;
 
         let mut cmd = Command::new(binary_path);
+        if flavor == BinaryFlavor::LlamaApp {
+            cmd.arg("serve");
+        }
         cmd.args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

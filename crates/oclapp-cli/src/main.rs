@@ -114,13 +114,21 @@ async fn launch_tool(tool: &str, model: &str, port: Option<u16>) -> Result<(), B
     let model_path = resolve_model_path(models_dir, model)
         .ok_or_else(|| format!("Model '{}' not found in {}", model, models_dir.display()))?;
 
+    if model_path.is_dir() {
+        return Err(format!(
+            "Model '{}' is in HuggingFace safetensors format. llama.cpp requires GGUF format.\n\
+            Convert it with: python3 convert_hf_to_gguf.py {} --outfile {}.gguf",
+            model, model_path.display(), model
+        ).into());
+    }
+
     info!("Launching {} with model: {}", get_tool_display_name(tool), model);
 
     // Ensure llama.cpp binary is available
     let data_dir = dirs::data_local_dir()
         .ok_or("Could not determine local data directory")?
         .join("com.oclapp.desktop");
-    let binary_path = ensure_binary(&data_dir).await?;
+    let resolved = ensure_binary(&data_dir).await?;
 
     // Build server config
     let server_port = port.unwrap_or(settings.server_port);
@@ -142,7 +150,8 @@ async fn launch_tool(tool: &str, model: &str, port: Option<u16>) -> Result<(), B
     info!("Starting llama.cpp server on port {}...", server_port);
     manager
         .start(
-            &binary_path,
+            &resolved.path,
+            resolved.flavor,
             &config.to_args(),
             model,
             server_port,
@@ -213,10 +222,18 @@ async fn serve_model(model: &str, port: Option<u16>) -> Result<(), Box<dyn std::
     let model_path = resolve_model_path(models_dir, model)
         .ok_or_else(|| format!("Model '{}' not found in {}", model, models_dir.display()))?;
 
+    if model_path.is_dir() {
+        return Err(format!(
+            "Model '{}' is in HuggingFace safetensors format. llama.cpp requires GGUF format.\n\
+            Convert it with: python3 convert_hf_to_gguf.py {} --outfile {}.gguf",
+            model, model_path.display(), model
+        ).into());
+    }
+
     let data_dir = dirs::data_local_dir()
         .ok_or("Could not determine local data directory")?
         .join("com.oclapp.desktop");
-    let binary_path = ensure_binary(&data_dir).await?;
+    let resolved = ensure_binary(&data_dir).await?;
 
     let server_port = port.unwrap_or(settings.server_port);
     let config = ServerConfig {
@@ -235,7 +252,7 @@ async fn serve_model(model: &str, port: Option<u16>) -> Result<(), Box<dyn std::
     let mut manager = ServerManager::new();
     info!("Starting llama.cpp server on port {}...", server_port);
     manager
-        .start(&binary_path, &config.to_args(), model, server_port)
+        .start(&resolved.path, resolved.flavor, &config.to_args(), model, server_port)
         .await?;
 
     println!("Server running at http://127.0.0.1:{}/v1", server_port);

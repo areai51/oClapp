@@ -1,1 +1,1 @@
-{"com.oclapp.desktop":{"identifier":"com.oclapp.desktop","description":"Local LLM inference desktop app powered by llama.cpp","local":true,"windows":["main"],"permissions":["core:default","store:default"]}}
+{"com.oclapp.desktop":{"identifier":"com.oclapp.desktop","description":"Local LLM inference desktop app powered by llama.cpp","local":true,"windows":["main"],"permissions":["core:default","store:default","dialog:default"]}}

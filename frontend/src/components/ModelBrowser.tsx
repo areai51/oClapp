@@ -37,12 +37,33 @@ export default function ModelBrowser({ onDownloadStart }: ModelBrowserProps) {
     }
   }
 
-  function handleDownload(model: ModelInfo) {
-    const fn = model.tags.find((t) => t.endsWith(".gguf"))
-      ? `${model.id.split("/").pop() || "model"}.gguf`
-      : "";
-    if (fn && onDownloadStart) {
-      onDownloadStart(model.id, fn);
+  async function handleDownload(model: ModelInfo) {
+    const isGguf = model.tags.some((t) => t.toLowerCase() === "gguf");
+    if (!isGguf || !onDownloadStart) return;
+
+    try {
+      const res = await fetch(
+        `https://huggingface.co/api/models/${model.id}/tree/main`
+      );
+      if (!res.ok) {
+        setError(`Failed to list files for ${model.id}`);
+        return;
+      }
+      const files: { path: string }[] = await res.json();
+      const ggufFiles = files
+        .map((f) => f.path)
+        .filter((p) => p.toLowerCase().endsWith(".gguf"));
+
+      if (ggufFiles.length === 0) {
+        setError(`No .gguf files found in ${model.id}. Use Direct Download.`);
+        return;
+      }
+
+      // If multiple GGUF files, use the first one (usually the main one)
+      const filename = ggufFiles[0];
+      onDownloadStart(model.id, filename);
+    } catch (e) {
+      setError(String(e));
     }
   }
 

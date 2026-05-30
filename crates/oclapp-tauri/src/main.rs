@@ -183,8 +183,24 @@ async fn start_server(app: AppHandle, state: tauri::State<'_, AppState>, model_i
     let model_path = oclapp_core::models::discovery::resolve_model_path(&settings.models_dir, &model_id)
         .ok_or_else(|| format!("Model '{}' not found", model_id))?;
 
+    // HuggingFace safetensors models need conversion to GGUF before llama.cpp can load them
+    if model_path.is_dir() {
+        return Err(format!(
+            "Model '{}' is in HuggingFace safetensors format. \
+            llama.cpp requires GGUF format to run inference.\n\n\
+            To fix this, either:\n\
+            1. Download a GGUF version of this model from HuggingFace\n\
+            2. Convert it using llama.cpp's conversion tool:\n\
+               python3 convert_hf_to_gguf.py {} --outfile {}.gguf\n\n\
+            Note: conversion requires 'transformers' and 'gguf' Python packages.",
+            model_id,
+            model_path.display(),
+            model_id
+        ));
+    }
+
     let data_dir = get_data_dir(&app)?;
-    let binary_path = ensure_binary(&data_dir).await.map_err(|e| e.to_string())?;
+    let resolved = ensure_binary(&data_dir).await.map_err(|e| e.to_string())?;
 
     let config = ServerConfig {
         model_path: model_path.to_string_lossy().to_string(),
@@ -202,7 +218,8 @@ async fn start_server(app: AppHandle, state: tauri::State<'_, AppState>, model_i
     let mut manager = state.server_manager.lock().await;
     manager
         .start(
-            &binary_path,
+            &resolved.path,
+            resolved.flavor,
             &config.to_args(),
             &model_id,
             settings.server_port,
@@ -273,7 +290,7 @@ pub fn run() {
             // Spawn log forwarding task
             let app_handle = app.handle().clone();
             let log_manager = server_manager.clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 let mut rx = {
                     let manager = log_manager.lock().await;
                     manager.subscribe_logs()
@@ -297,7 +314,7 @@ pub fn run() {
             // Spawn status polling task
             let app_handle = app.handle().clone();
             let status_manager = server_manager.clone();
-            tokio::spawn(async move {
+            tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(2));
                 let mut last_state = ServerState::Idle;
                 loop {
@@ -333,4 +350,114 @@ pub fn run() {
 
 fn main() {
     run();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_settings_roundtrip() {
+        let original = Settings {
+            models_dir: PathBuf::from("/custom/models"),
+            server_port: 9090,
+            curated_params: oclapp_core::settings::CuratedParams {
+                temperature: 0.5,
+                top_p: 0.9,
+                context_size: 8192,
+                max_tokens: 2048,
+                gpu_layers: 40,
+            },
+            advanced_params: oclapp_core::settings::AdvancedParams {
+                seed: 42,
+                repeat_penalty: 1.1,
+                frequency_penalty: 0.2,
+                presence_penalty: 0.3,
+                batch_size: 1024,
+                threads: 8,
+                flash_attention: true,
+                mmap: false,
+                mlock: true,
+            },
+        };
+
+        let store_val = settings_to_store(&original);
+        let back = settings_from_store(&store_val);
+
+        assert_eq!(back.models_dir, original.models_dir);
+        assert_eq!(back.server_port, original.server_port);
+        assert_eq!(back.curated_params.temperature, original.curated_params.temperature);
+        assert_eq!(back.curated_params.top_p, original.curated_params.top_p);
+        assert_eq!(back.curated_params.context_size, original.curated_params.context_size);
+        assert_eq!(back.curated_params.max_tokens, original.curated_params.max_tokens);
+        assert_eq!(back.curated_params.gpu_layers, original.curated_params.gpu_layers);
+        assert_eq!(back.advanced_params.seed, original.advanced_params.seed);
+        assert_eq!(back.advanced_params.repeat_penalty, original.advanced_params.repeat_penalty);
+        assert_eq!(back.advanced_params.frequency_penalty, original.advanced_params.frequency_penalty);
+        assert_eq!(back.advanced_params.presence_penalty, original.advanced_params.presence_penalty);
+        assert_eq!(back.advanced_params.batch_size, original.advanced_params.batch_size);
+        assert_eq!(back.advanced_params.threads, original.advanced_params.threads);
+        assert_eq!(back.advanced_params.flash_attention, original.advanced_params.flash_attention);
+        assert_eq!(back.advanced_params.mmap, original.advanced_params.mmap);
+        assert_eq!(back.advanced_params.mlock, original.advanced_params.mlock);
+    }
+
+    #[test]
+    fn test_settings_default_roundtrip() {
+        let default = Settings::default();
+        let store_val = settings_to_store(&default);
+        let back = settings_from_store(&store_val);
+        assert_eq!(back.models_dir, default.models_dir);
+        assert_eq!(back.server_port, default.server_port);
+    }
+
+    #[test]
+    fn test_settings_partial_restore() {
+        let partial = serde_json::json!({
+            "models_dir": "/partial/path",
+            "server_port": 7777,
+        });
+        let back = settings_from_store(&partial);
+        assert_eq!(back.models_dir, PathBuf::from("/partial/path"));
+        assert_eq!(back.server_port, 7777);
+        // defaults for missing fields
+        assert_eq!(back.curated_params.temperature, Settings::default().curated_params.temperature);
+    }
+
+    #[test]
+    fn test_download_progress_payload_serde() {
+        let payload = DownloadProgressPayload {
+            repo_id: "user/repo".to_string(),
+            filename: "model.gguf".to_string(),
+            total_bytes: 1000,
+            downloaded_bytes: 500,
+        };
+        let json = serde_json::to_string(&payload).unwrap();
+        let back: DownloadProgressPayload = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.repo_id, "user/repo");
+        assert_eq!(back.filename, "model.gguf");
+        assert_eq!(back.total_bytes, 1000);
+        assert_eq!(back.downloaded_bytes, 500);
+    }
+
+    #[test]
+    fn test_huggingface_model_rejected_at_start_server() {
+        let dir = std::env::temp_dir().join("oclapp-test-hf-dir");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.json"), b"{}").unwrap();
+
+        let path = oclapp_core::models::discovery::resolve_model_path(&dir.parent().unwrap(),
+            dir.file_name().unwrap().to_str().unwrap()
+        );
+        assert!(path.is_some());
+        assert!(path.unwrap().is_dir());
+    }
+
+    #[test]
+    fn test_app_state_new() {
+        let manager = ServerManager::new();
+        assert_eq!(manager.status().state, ServerState::Idle);
+    }
 }

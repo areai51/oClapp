@@ -13,10 +13,10 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 reqwest = { workspace = true }
 dirs = "5"
-hf-hub = "0.4"
 futures-util = "0.3"
 urlencoding = "2"
 zip = "2"
 
 [dev-dependencies]
 tokio-test = "0.4"
+tempfile = "3"

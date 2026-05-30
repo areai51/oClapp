@@ -21,10 +21,11 @@ pub struct LocalModel {
     pub format: ModelFormat,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ModelFormat {
     Gguf,
     Mlx,
+    Safetensors,
     Unknown,
 }
 
@@ -33,6 +34,7 @@ impl std::fmt::Display for ModelFormat {
         match self {
             ModelFormat::Gguf => write!(f, "GGUF"),
             ModelFormat::Mlx => write!(f, "MLX"),
+            ModelFormat::Safetensors => write!(f, "Safetensors"),
             ModelFormat::Unknown => write!(f, "Unknown"),
         }
     }
@@ -90,6 +92,40 @@ pub async fn search_huggingface(query: &str) -> Result<Vec<ModelInfo>> {
     Ok(models)
 }
 
+fn is_huggingface_model_dir(path: &Path) -> bool {
+    if !path.is_dir() {
+        return false;
+    }
+    let has_config = path.join("config.json").exists();
+    let has_safetensors = std::fs::read_dir(path)
+        .ok()
+        .map(|entries| {
+            entries.filter_map(|e| e.ok()).any(|e| {
+                e.path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext.eq_ignore_ascii_case("safetensors"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false);
+    has_config || has_safetensors
+}
+
+fn dir_size(path: &Path) -> Result<u64> {
+    let mut total = 0u64;
+    for entry in std::fs::read_dir(path).map_err(OclappError::Io)? {
+        let entry = entry.map_err(OclappError::Io)?;
+        let meta = entry.metadata().map_err(OclappError::Io)?;
+        if meta.is_file() {
+            total += meta.len();
+        } else if meta.is_dir() {
+            total += dir_size(&entry.path())?;
+        }
+    }
+    Ok(total)
+}
+
 pub fn list_local_models(models_dir: &Path) -> Result<Vec<LocalModel>> {
     let mut models = Vec::new();
 
@@ -111,10 +147,11 @@ pub fn list_local_models(models_dir: &Path) -> Result<Vec<LocalModel>> {
             let format = match ext.as_str() {
                 "gguf" => ModelFormat::Gguf,
                 "mlx" => ModelFormat::Mlx,
+                "safetensors" => ModelFormat::Safetensors,
                 _ => ModelFormat::Unknown,
             };
 
-            if matches!(format, ModelFormat::Gguf | ModelFormat::Mlx) {
+            if matches!(format, ModelFormat::Gguf | ModelFormat::Mlx | ModelFormat::Safetensors) {
                 let size = entry.metadata().map_err(OclappError::Io)?.len();
                 let id = path
                     .file_stem()
@@ -129,6 +166,20 @@ pub fn list_local_models(models_dir: &Path) -> Result<Vec<LocalModel>> {
                     format,
                 });
             }
+        } else if is_huggingface_model_dir(&path) {
+            let size = dir_size(&path)?;
+            let id = path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("")
+                .to_string();
+
+            models.push(LocalModel {
+                id,
+                path: path.to_string_lossy().to_string(),
+                size,
+                format: ModelFormat::Safetensors,
+            });
         }
     }
 
@@ -144,6 +195,17 @@ pub fn resolve_model_path(models_dir: &Path, model_name: &str) -> Option<std::pa
     let mlx_path = models_dir.join(format!("{}.mlx", model_name));
     if mlx_path.exists() {
         return Some(mlx_path);
+    }
+
+    let safetensors_path = models_dir.join(format!("{}.safetensors", model_name));
+    if safetensors_path.exists() {
+        return Some(safetensors_path);
+    }
+
+    // HuggingFace model directory
+    let hf_dir = models_dir.join(model_name);
+    if hf_dir.is_dir() && is_huggingface_model_dir(&hf_dir) {
+        return Some(hf_dir);
     }
 
     // Try exact match if user provided full filename
