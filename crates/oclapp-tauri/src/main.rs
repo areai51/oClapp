@@ -1,7 +1,9 @@
 use oclapp_core::models::discovery::{list_local_models, search_huggingface, LocalModel, ModelInfo};
 use oclapp_core::server::binary::ensure_binary;
+use oclapp_core::server::client::send_chat_completion as send_chat_completion_http;
 use oclapp_core::server::config::ServerConfig;
 use oclapp_core::server::lifecycle::{ServerManager, ServerState, ServerStatus};
+use oclapp_core::server::{ChatCompletionRequest, ChatCompletionResponse};
 use oclapp_core::settings::Settings;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -250,6 +252,26 @@ async fn get_server_status(state: tauri::State<'_, AppState>) -> Result<ServerSt
 }
 
 #[tauri::command]
+async fn send_chat_completion(
+    state: tauri::State<'_, AppState>,
+    request: ChatCompletionRequest,
+) -> Result<ChatCompletionResponse, String> {
+    let manager = state.server_manager.lock().await;
+    let status = manager.status();
+
+    if status.state != ServerState::Running {
+        return Err("Server is not running".to_string());
+    }
+
+    let port = status.port;
+    let url = format!("http://127.0.0.1:{}/v1/chat/completions", port);
+
+    send_chat_completion_http(&url, &request)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn load_settings(app: AppHandle) -> Result<Settings, String> {
     let store = get_settings_store(&app)?;
     let value = store
@@ -340,6 +362,7 @@ pub fn run() {
             start_server,
             stop_server,
             get_server_status,
+            send_chat_completion,
             load_settings,
             save_settings,
             pick_models_dir,

@@ -6,6 +6,8 @@ import type {
   ServerStatus,
   Settings,
   DownloadProgressPayload,
+  ChatCompletionRequest,
+  ChatCompletionResponse,
 } from "../types";
 
 export async function searchModels(query: string): Promise<ModelInfo[]> {
@@ -67,4 +69,10 @@ export function onDownloadProgress(
   return listen<DownloadProgressPayload>("download-progress", (event) => {
     callback(event.payload);
   });
+}
+
+export async function sendChatCompletion(
+  request: ChatCompletionRequest
+): Promise<ChatCompletionResponse> {
+  return invoke("send_chat_completion", { request });
 }
