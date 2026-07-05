@@ -107,6 +107,73 @@ fn get_tool_display_name(tool: &str) -> &str {
 }
 
 async fn launch_tool(tool: &str, model: &str, port: Option<u16>) -> Result<(), Box<dyn std::error::Error>> {
+    // If the model ends with ":cloud", route the tool to a cloud endpoint using env vars
+    let is_cloud = model.ends_with(":cloud");
+
+    let tool_exe = resolve_tool_executable(tool)
+        .ok_or_else(|| format!("Unknown tool: {}", tool))?;
+
+    // Check if tool exists in PATH
+    if which::which(&tool_exe).is_err() {
+        eprintln!("Warning: '{}' not found in PATH. Make sure it's installed.", tool_exe);
+    }
+
+    if is_cloud {
+        info!(
+            "Launching {} against cloud endpoint with model: {}",
+            get_tool_display_name(tool),
+            model
+        );
+
+        // Read required env vars
+        let base_url = std::env::var("OPENAI_BASE_URL").map_err(|_| {
+            "OPENAI_BASE_URL not set. Please set it to your inference URL (e.g., https://api.example.com/v1)".to_string()
+        })?;
+        let api_key = std::env::var("OPENAI_API_KEY").map_err(|_| {
+            "OPENAI_API_KEY not set. Please set it to your cloud inference API key".to_string()
+        })?;
+
+        // Setup shutdown flag
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let shutdown_clone = shutdown.clone();
+        ctrlc::set_handler(move || {
+            shutdown_clone.store(true, Ordering::SeqCst);
+        })?;
+
+        // Spawn the tool pointing to the cloud endpoint
+        info!("Spawning {}...", tool_exe);
+        let mut tool_cmd = std::process::Command::new(&tool_exe);
+        tool_cmd
+            .env("OPENAI_BASE_URL", base_url)
+            .env("OPENAI_API_KEY", api_key)
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit());
+
+        let mut child = tool_cmd.spawn()?;
+
+        loop {
+            if shutdown.load(Ordering::SeqCst) {
+                info!("Received interrupt signal, shutting down...");
+                let _ = child.kill();
+                break;
+            }
+
+            match child.try_wait()? {
+                Some(status) => {
+                    info!("Tool exited with status: {}", status);
+                    break;
+                }
+                None => {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                }
+            }
+        }
+
+        return Ok(());
+    }
+
+    // Local mode: ensure local server is running and point the tool at it
     let settings = load_settings().await?;
     let models_dir = &settings.models_dir;
 
@@ -162,13 +229,6 @@ async fn launch_tool(tool: &str, model: &str, port: Option<u16>) -> Result<(), B
 
     // Set environment variables for the target tool
     let openai_base_url = format!("http://127.0.0.1:{}/v1", server_port);
-    let tool_exe = resolve_tool_executable(tool)
-        .ok_or_else(|| format!("Unknown tool: {}", tool))?;
-
-    // Check if tool exists in PATH
-    if which::which(&tool_exe).is_err() {
-        eprintln!("Warning: '{}' not found in PATH. Make sure it's installed.", tool_exe);
-    }
 
     // Setup shutdown flag
     let shutdown = Arc::new(AtomicBool::new(false));
